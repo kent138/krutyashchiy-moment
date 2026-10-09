@@ -1,0 +1,8 @@
+import {validateLead} from '../public/data.js';
+// Optional production notification endpoint. Demo forms use browser storage.
+export async function POST(request){
+ const origin=request.headers.get('origin');if(!process.env.ALLOWED_ORIGIN||origin!==process.env.ALLOWED_ORIGIN)return Response.json({error:'Источник запроса не разрешён'},{status:403});
+ if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_CHAT_ID)return Response.json({error:'Уведомления пока не подключены'},{status:503});
+ if(Number(request.headers.get('content-length')||0)>8192)return Response.json({error:'Слишком большой запрос'},{status:413});
+ try{const raw=await request.text();if(raw.length>8192)return Response.json({error:'Слишком большой запрос'},{status:413});const data=validateLead(JSON.parse(raw));if(data.website)return Response.json({error:'Запрос отклонён'},{status:400});const message=['Новая заявка · Крутящий Момент',data.name,data.phone,data.car,data.service||'',data.date||'',data.time||'',data.problem||''].join('\n');const res=await fetch('https://api.telegram.org/bot'+process.env.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text:message}),signal:AbortSignal.timeout(10000)});const payload=await res.json();if(!res.ok||!payload.ok)throw Error('telegram_failed');return Response.json({ok:true});}catch(err){if(err instanceof SyntaxError)return Response.json({error:'Некорректные данные'},{status:400});if(err.message==='telegram_failed'||err.name==='TimeoutError'){console.error('Telegram notification failed');return Response.json({error:'Не удалось отправить заявку. Попробуйте позже.'},{status:502});}return Response.json({error:err.message},{status:400});}
+}
